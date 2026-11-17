@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>간단 ERP · 수주 관리</title>
+<style>
+:root{--bg:#faf9f5;--card:#fff;--tx:#1f1e1d;--tx2:#6b6a66;--bd:#e3e1d9;--ac:#185FA5;--acbg:#E6F1FB;--dn:#A32D2D;--pr:#1f1e1d;--prtx:#fff;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1f1e1d;--card:#2b2a28;--tx:#f0eee6;--tx2:#a8a69e;--bd:#44423e;--ac:#85B7EB;--acbg:#0C447C;--dn:#F09595;--pr:#f0eee6;--prtx:#1f1e1d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1f1e1d;--card:#2b2a28;--tx:#f0eee6;--tx2:#a8a69e;--bd:#44423e;--ac:#85B7EB;--acbg:#0C447C;--dn:#F09595;--pr:#f0eee6;--prtx:#1f1e1d;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.6 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:16px}
+nav{display:flex;gap:4px;border-bottom:1px solid var(--bd);margin-bottom:16px}
+nav button{border:0;background:none;color:var(--tx2);padding:10px 14px;font:inherit;cursor:pointer;border-bottom:2px solid transparent}
+nav button.on{color:var(--tx);border-color:var(--tx);font-weight:500}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+h2{font-size:18px;font-weight:500;margin:0 0 12px}
+input,select{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:7px 10px;min-height:36px;width:100%}
+button.b{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:7px 14px;min-height:36px;cursor:pointer}
+button.p{background:var(--pr);color:var(--prtx);border-color:var(--pr)}
+button.d{color:var(--dn)}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.bar input{flex:1;min-width:160px;width:auto}.bar select{width:150px}
+.sc{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+th{text-align:left;color:var(--tx2);font-weight:500;padding:8px 6px;border-bottom:1px solid var(--bd)}
+td{padding:10px 6px;border-bottom:1px solid var(--bd);vertical-align:middle}
+tr.k{cursor:pointer}tr.k:hover td{background:var(--bg)}
+.r{text-align:right}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:12px}
+label{font-size:13px;color:var(--tx2);display:block}label>*{margin-top:4px}
+.note{background:var(--acbg);color:var(--ac);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:12px}
+.mut{color:var(--tx2);font-size:13px}
+.err{color:var(--dn);font-size:13px;margin:8px 0}
+.act{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;margin-bottom:16px}.kv span:nth-child(odd){color:var(--tx2)}
+.empty{text-align:center;padding:32px 8px;color:var(--tx2)}
+</style>
+</head>
+<body>
+<div class="wrap"><p class="mut" style="margin:0 0 8px">시험용 샘플 · 입력한 내용은 이 브라우저에만 저장됩니다.</p><nav id="nav"></nav><div id="app"><p class="mut">불러오는 중…</p></div></div>
+<script>
+const CATS=[["컷팅기","DC"],["대차","WC"],["설비","PJ"],["금형치기공구","PT"],["A/S-컷팅기","AS"],["A/S-대차","AS"],["A/S-설비","AS"],["A/S-금형치기공구","AS"],["A/S-기타","AS"]];
+const h=(t,a={},...c)=>{const e=document.createElement(t);for(const k in a){if(k==="class")e.className=a[k];else if(k.startsWith("on"))e.addEventListener(k.slice(2),a[k]);else e.setAttribute(k,a[k])}c.flat().forEach(x=>e.append(x==null||x===false?"":x));return e};
+const won=n=>n===""||n==null?"-":Number(n).toLocaleString("ko-KR");
+const num=s=>String(s||"").replace(/[^0-9]/g,"");
+const dt=s=>s?s.replace(/-/g,"."):"-";
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const data=d=>typeof d.data==="function"?d.data():d.data;
+let db=null,customers=[],pos=[],view="list",cur=null,q="",fc="",form=null,msg="",confirmDel=null;
+const app=document.getElementById("app"),nav=document.getElementById("nav");
+const newForm=()=>({cust:"",cat:0,date:today(),quote:"",amt:"",due:"",items:[{car:"",no:"",name:"",qty:"1"}]});
+const go=(v,c)=>{view=v;cur=c||null;msg="";confirmDel=null;if(v==="new"&&!form)form=newForm();render()};
+
+function render(){
+  nav.replaceChildren(h("button",{class:view==="list"||view==="new"||view==="detail"?"on":"",onclick:()=>go("list")},"수주 목록"),h("button",{class:view==="customers"?"on":"",onclick:()=>go("customers")},"고객사"));
+  if(!db){app.replaceChildren(h("div",{class:"card empty"},"저장소에 연결하지 못했습니다. 로그인 상태를 확인한 뒤 새로고침해 주세요."));return}
+  const f={list:vList,new:vNew,detail:vDetail,customers:vCust}[view];
+  app.replaceChildren(f());
+}
+const cname=id=>(customers.find(c=>c.id===id)||{}).name||"(삭제된 고객사)";
+
+function vList(){
+  const body=h("tbody");
+  const fill=()=>{
+    const k=q.trim().toLowerCase();
+    const rows=pos.filter(p=>(!fc||p.cat===fc)&&(!k||[p.id,cname(p.cust),...(p.items||[]).flatMap(i=>[i.no,i.name,i.car])].join(" ").toLowerCase().includes(k)));
+    body.replaceChildren(...rows.map(p=>h("tr",{class:"k",onclick:()=>go("detail",p.id)},h("td",{},p.id),h("td",{},cname(p.cust)),h("td",{},p.cat),h("td",{},String((p.items||[]).length)),h("td",{class:"r"},won(p.amt)),h("td",{},dt(p.due)))));
+    empty.style.display=rows.length?"none":"block";
+    empty.textContent=pos.length?"조건에 맞는 PO가 없습니다.":"첫 PO를 등록해 보세요. 고객사가 없으면 먼저 ‘고객사’ 탭에서 추가합니다.";
+  };
+  const empty=h("div",{class:"empty"});
+  const sel=h("select",{onchange:e=>{fc=e.target.value;fill()}},h("option",{value:""},"전체 분류"),CATS.map(c=>h("option",{value:c[0]},c[0])));sel.value=fc;
+  const card=h("div",{class:"card"},
+    h("div",{class:"bar"},h("input",{type:"text",placeholder:"PO번호, 고객사, 품번으로 검색",value:q,oninput:e=>{q=e.target.value;fill()}}),sel,h("button",{class:"b p",onclick:()=>{form=newForm();go("new")}},"+ PO 등록")),
+    h("div",{class:"sc"},h("table",{},h("thead",{},h("tr",{},h("th",{},"PO번호"),h("th",{},"고객사"),h("th",{},"분류"),h("th",{},"품목"),h("th",{class:"r"},"PO 금액"),h("th",{},"납기"))),body)),empty);
+  fill();
+  return card;
+}
+
+function vNew(){
+  const F=form;
+  const field=(label,el)=>h("label",{},label,el);
+  const cs=h("select",{onchange:e=>F.cust=e.target.value},h("option",{value:""},"고객사를 선택하세요"),customers.map(c=>h("option",{value:c.id},c.name)));cs.value=F.cust;
+  const cat=h("select",{onchange:e=>{F.cat=+e.target.value;prev()}},CATS.map((c,i)=>h("option",{value:i},c[0])));cat.value=F.cat;
+  const date=h("input",{type:"date",value:F.date,onchange:e=>{F.date=e.target.value;prev()}});
+  const money=k=>{const i=h("input",{type:"text",inputmode:"numeric",value:F[k]===""?"":won(F[k]),oninput:e=>F[k]=num(e.target.value),onblur:e=>e.target.value=F[k]===""?"":won(F[k])});return i};
+  const pv=h("div",{class:"note"});
+  const prev=()=>{const c=CATS[F.cat][1],d=(F.date||"").replace(/-/g,"").slice(2);pv.textContent="PO번호는 저장할 때 자동으로 만들어집니다. 예: HDS-"+c+"-"+d+"01"};prev();
+  const err=h("div",{class:"err"});
+  const itemsBox=h("div");
+  const drawItems=()=>itemsBox.replaceChildren(h("div",{class:"sc"},h("table",{style:"min-width:520px"},h("thead",{},h("tr",{},h("th",{},"차종"),h("th",{},"품번"),h("th",{},"품명"),h("th",{style:"width:80px"},"수량"),h("th",{style:"width:40px"},""))),
+    h("tbody",{},F.items.map((it,i)=>h("tr",{},...["car","no","name","qty"].map(k=>h("td",{},h("input",{type:"text",value:it[k],oninput:e=>it[k]=e.target.value}))),h("td",{},F.items.length>1?h("button",{class:"b d",title:"품목 삭제","aria-label":"품목 삭제",onclick:()=>{F.items.splice(i,1);drawItems()}},"×"):""))))))
+  ,h("button",{class:"b",style:"margin-top:8px",onclick:()=>{F.items.push({car:"",no:"",name:"",qty:"1"});drawItems()}},"+ 품목 추가"));
+  drawItems();
+  const save=h("button",{class:"b p",onclick:async()=>{
+    err.textContent="";
+    if(!F.cust){err.textContent="고객사를 선택하세요.";return}
+    if(!F.date){err.textContent="접수일을 입력하세요.";return}
+    const items=F.items.filter(i=>i.car||i.no||i.name);
+    if(!items.length){err.textContent="품목을 한 줄 이상 입력하세요.";return}
+    save.textContent="저장 중…";
+    try{
+      const c=CATS[F.cat][1],pre="HDS-"+c+"-"+F.date.replace(/-/g,"").slice(2);
+      let n=pos.filter(p=>p.id.startsWith(pre)).length+1,id;
+      for(let t=0;t<20;t++,n++){id=pre+String(n).padStart(2,"0");const s=await db.doc("pos/"+id).get();if(!s.exists)break}
+      await db.doc("pos/"+id).set({cust:F.cust,cat:CATS[F.cat][0],date:F.date,quote:F.quote,amt:F.amt,due:F.due,items:items.map(i=>({...i,qty:num(i.qty)||"1"})),created:Date.now()});
+      form=null;go("detail",id);
+    }catch(e){err.textContent="저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";save.textContent="저장"}
+  }},"저장");
+  return h("div",{class:"card"},h("h2",{},"PO 등록"),
+    h("div",{class:"g"},field("고객사",cs),field("분류",cat),field("접수일",date)),pv,
+    h("div",{class:"g"},field("견적가",money("quote")),field("PO 금액",money("amt")),field("납기",h("input",{type:"date",value:F.due,onchange:e=>F.due=e.target.value}))),
+    h("h2",{style:"font-size:15px"},"품목"),itemsBox,err,
+    h("div",{class:"act"},h("button",{class:"b",onclick:()=>go("list")},"취소"),save));
+}
+
+function vDetail(){
+  const p=pos.find(x=>x.id===cur);
+  if(!p)return h("div",{class:"card empty"},"PO를 찾을 수 없습니다.",h("div",{},h("button",{class:"b",style:"margin-top:12px",onclick:()=>go("list")},"목록으로")));
+  const kv=[["PO번호",p.id],["고객사",cname(p.cust)],["분류",p.cat],["접수일",dt(p.date)],["견적가",won(p.quote)],["PO 금액",won(p.amt)],["납기",dt(p.due)]];
+  const del=h("button",{class:"b d",onclick:async()=>{if(confirmDel!==p.id){confirmDel=p.id;del.textContent="정말 삭제하려면 한 번 더 누르세요";return}try{await db.doc("pos/"+p.id).delete();go("list")}catch(e){del.textContent="삭제하지 못했습니다"}}},"삭제");
+  return h("div",{class:"card"},h("h2",{},p.id),h("div",{class:"kv"},kv.flatMap(([a,b])=>[h("span",{},a),h("span",{},b)])),
+    h("h2",{style:"font-size:15px"},"품목"),
+    h("div",{class:"sc"},h("table",{style:"min-width:480px"},h("thead",{},h("tr",{},h("th",{},"차종"),h("th",{},"품번"),h("th",{},"품명"),h("th",{class:"r"},"수량"))),h("tbody",{},(p.items||[]).map(i=>h("tr",{},h("td",{},i.car),h("td",{},i.no),h("td",{},i.name),h("td",{class:"r"},i.qty)))))),
+    h("p",{class:"mut"},"공정 진행과 수금 현황은 다음 단계에서 이 화면에 추가됩니다."),
+    h("div",{class:"act"},h("button",{class:"b",onclick:()=>go("list")},"목록으로"),del));
+}
+
+function vCust(){
+  const name=h("input",{type:"text",placeholder:"고객사 이름"}),biz=h("input",{type:"text",placeholder:"000-00-00000"}),err=h("div",{class:"err"});
+  const add=async()=>{
+    const n=name.value.trim();err.textContent="";
+    if(!n){err.textContent="고객사 이름을 입력하세요.";return}
+    if(customers.some(c=>c.name===n)){err.textContent="이미 등록된 고객사입니다.";return}
+    try{await db.collection("customers").add({name:n,biz:biz.value.trim(),created:Date.now()});name.value="";biz.value=""}catch(e){err.textContent="저장하지 못했습니다. 잠시 후 다시 시도해 주세요."}
+  };
+  return h("div",{class:"card"},h("h2",{},"고객사"),
+    h("div",{class:"g"},h("label",{},"이름",name),h("label",{},"사업자등록번호",biz),h("label",{},"\u00a0",h("button",{class:"b p",onclick:add},"+ 고객사 추가"))),err,
+    customers.length?h("div",{class:"sc"},h("table",{style:"min-width:420px"},h("thead",{},h("tr",{},h("th",{},"이름"),h("th",{},"사업자등록번호"),h("th",{class:"r"},"PO 수"),h("th",{},""))),
+      h("tbody",{},customers.map(c=>{const used=pos.filter(p=>p.cust===c.id).length;
+        const b=h("button",{class:"b d",onclick:async()=>{if(used){b.textContent="PO가 있어 삭제할 수 없음";return}if(confirmDel!==c.id){confirmDel=c.id;b.textContent="한 번 더 누르면 삭제";return}try{await db.doc("customers/"+c.id).delete()}catch(e){b.textContent="삭제하지 못했습니다"}}},"삭제");
+        return h("tr",{},h("td",{},c.name),h("td",{},c.biz||"-"),h("td",{class:"r"},String(used)),h("td",{class:"r"},b))})))):h("div",{class:"empty"},"아직 고객사가 없습니다. 위에서 첫 고객사를 추가해 보세요."));
+}
+
+function localDb(){
+  const K="erp1:data";let mem={};const subs=[];
+  const load=()=>{try{return JSON.parse(localStorage.getItem(K)||"{}")}catch(e){return mem}};
+  const save=o=>{mem=o;try{localStorage.setItem(K,JSON.stringify(o))}catch(e){}};
+  const snap=(c,f,d)=>{const o=load()[c]||{};const ds=Object.entries(o).map(([id,v])=>({id,exists:true,data:()=>v}));ds.sort((a,b)=>{const x=a.data()[f],y=b.data()[f];return(x>y?1:x<y?-1:0)*(d==="desc"?-1:1)});return{docs:ds}};
+  const fire=()=>subs.forEach(s=>s());
+  const write=(c,id,fn)=>{const o=load();o[c]=o[c]||{};fn(o[c],id);save(o);fire()};
+  const sp=p=>p.split("/");
+  const doc=p=>{const[c,id]=sp(p);return{
+    get:async()=>{const v=(load()[c]||{})[id];return{exists:!!v,data:()=>v}},
+    set:async v=>write(c,id,(m,i)=>{m[i]=v}),
+    delete:async()=>write(c,id,(m,i)=>{delete m[i]})}};
+  const col=(c,f="created",d="asc")=>({
+    orderBy:(f2,d2)=>col(c,f2,d2),
+    onSnapshot:cb=>{const run=()=>cb(snap(c,f,d));subs.push(run);run();return()=>{}},
+    add:async v=>{const id="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);write(c,id,(m,i)=>{m[i]=v});return{id}}});
+  return{doc,collection:c=>col(c)};
+}
+(async()=>{
+  db=localDb();
+  render();
+  if(!db)return;
+  db.collection("customers").orderBy("name","asc").onSnapshot(s=>{customers=s.docs.map(d=>({id:d.id,...data(d)}));if(view!=="new")render()});
+  db.collection("pos").orderBy("created","desc").onSnapshot(s=>{pos=s.docs.map(d=>({id:d.id,...data(d)}));if(view!=="new")render()});
+})();
+</script>
+</body>
+</html>
